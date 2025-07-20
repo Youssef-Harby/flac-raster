@@ -114,15 +114,20 @@ def info(
     elif suffix == '.flac':
         import pyflac
         console.print(f"[cyan]FLAC Information:[/cyan]")
-        decoder = pyflac.FileDecoder(str(file_path))
         
-        # Get stream info
-        info = decoder.process_metadata()
-        console.print(f"  Sample rate: {decoder.sample_rate} Hz")
-        console.print(f"  Channels: {decoder.channels}")
-        console.print(f"  Bits per sample: {decoder.bits_per_sample}")
-        console.print(f"  Total samples: {decoder.total_samples}")
-        console.print(f"  File size: {file_path.stat().st_size / 1024 / 1024:.2f} MB")
+        try:
+            # Use the same approach as converter to get FLAC info
+            decoder = pyflac.FileDecoder(str(file_path))
+            audio_data, sample_rate = decoder.process()
+            
+            console.print(f"  Sample rate: {sample_rate} Hz")
+            console.print(f"  Channels: {audio_data.shape[1] if len(audio_data.shape) > 1 else 1}")
+            console.print(f"  Audio shape: {audio_data.shape}")
+            console.print(f"  Data type: {audio_data.dtype}")
+            console.print(f"  File size: {file_path.stat().st_size / 1024 / 1024:.2f} MB")
+        except Exception as e:
+            console.print(f"  [red]Error reading FLAC file: {e}[/red]")
+            console.print(f"  File size: {file_path.stat().st_size / 1024 / 1024:.2f} MB")
         
         # Check for sidecar metadata file
         metadata_path = file_path.with_suffix('.json')
