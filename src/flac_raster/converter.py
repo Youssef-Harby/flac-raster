@@ -214,7 +214,7 @@ class RasterFLACConverter:
             
             self.logger.info(f"Conversion complete: {output_size / 1024 / 1024:.2f} MB")
             self.logger.info(f"Compression ratio: {compression_ratio:.1f}%")
-            console.print(f"[green]✓ Successfully converted to FLAC: {flac_path}[/green]")
+            console.print(f"[green]SUCCESS: Converted to FLAC: {flac_path}[/green]")
             console.print(f"[dim]File size: {output_size / 1024 / 1024:.2f} MB (compression: {compression_ratio:.1f}%)[/dim]")
     
     def flac_to_tiff(self, flac_path: Path, tiff_path: Path):
@@ -303,7 +303,7 @@ class RasterFLACConverter:
         
         output_size = tiff_path.stat().st_size
         self.logger.info(f"TIFF written successfully: {output_size / 1024 / 1024:.2f} MB")
-        console.print(f"[green]✓ Successfully converted to TIFF: {tiff_path}[/green]")
+        console.print(f"[green]SUCCESS: Converted to TIFF: {tiff_path}[/green]")
     
     def _get_write_callback(self, output_path: Path):
         """Create a write callback for FLAC encoder"""

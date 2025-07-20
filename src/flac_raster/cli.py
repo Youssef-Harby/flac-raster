@@ -187,7 +187,7 @@ def compare(
         if export_json:
             with open(export_json, 'w') as f:
                 json.dump(results, f, indent=2)
-            console.print(f"\n[green]✓ Comparison results exported to: {export_json}[/green]")
+            console.print(f"\n[green]SUCCESS: Comparison results exported to: {export_json}[/green]")
             
     except Exception as e:
         logger.exception("Comparison failed")

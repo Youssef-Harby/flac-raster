@@ -92,11 +92,11 @@ def display_comparison_table(results: dict):
     
     # Add basic properties
     table.add_row("Shape", str(results["file1_shape"]), str(results["file2_shape"]), 
-                  "✓" if results["shape_match"] else "✗")
+                  "YES" if results["shape_match"] else "NO")
     table.add_row("Data Type", results["file1_dtype"], results["file2_dtype"],
-                  "✓" if results["dtype_match"] else "✗")
+                  "YES" if results["dtype_match"] else "NO")
     table.add_row("CRS", results["file1_crs"], results["file2_crs"],
-                  "✓" if results["crs_match"] else "✗")
+                  "YES" if results["crs_match"] else "NO")
     
     console.print(table)
     
@@ -106,7 +106,7 @@ def display_comparison_table(results: dict):
         stats_table.add_column("Metric", style="cyan")
         stats_table.add_column("Value", style="bold")
         
-        stats_table.add_row("Arrays Equal", "✓" if results["arrays_equal"] else "✗")
+        stats_table.add_row("Arrays Equal", "YES" if results["arrays_equal"] else "NO")
         stats_table.add_row("Max Difference", f"{results['max_difference']:.6f}")
         stats_table.add_row("Mean Difference", f"{results['mean_difference']:.6f}")
         stats_table.add_row("RMSE", f"{results['rmse']:.6f}")
@@ -137,7 +137,7 @@ def display_comparison_table(results: dict):
             for band in results["bands"]:
                 band_table.add_row(
                     str(band["band"]),
-                    "✓" if band["equal"] else "✗",
+                    "YES" if band["equal"] else "NO",
                     f"{band['max_diff']:.3f}",
                     f"{band['mean_diff']:.6f}",
                     f"[{band['file1_range'][0]:.1f}, {band['file1_range'][1]:.1f}]",
