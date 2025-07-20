@@ -32,6 +32,8 @@ dependencies = [
     "rich",
     "tqdm",
     "pyflac",
+    "mutagen",
+    "requests",
 ]
 
 [project.optional-dependencies]

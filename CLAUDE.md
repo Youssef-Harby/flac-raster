@@ -1,2 +1,2 @@
-1. we are using pixi package manager (pixi add <conda package> , pixi shell before running a command, or pixi run main.py or if the package dosn't exist in conde you can use pixi add --pypi <package name>)
+1. we are using pixi package manager (pixi add <conda package>, or pixi run main.py or if the package dosn't exist in conde you can use pixi add --pypi <package name>)
 2. use pathlib instead of os
