@@ -3,7 +3,7 @@ authors = ["Youssef-Harby <me@youssefharby.com>"]
 channels = ["conda-forge"]
 name = "flac-raster"
 platforms = ["win-64", "linux-64", "osx-64", "osx-arm64"]
-version = "0.1.1"
+version = "0.1.2"
 
 [tasks]
 
