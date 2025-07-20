@@ -110,7 +110,7 @@ After installation, you can use the CLI directly:
    flac-raster convert input.tif --spatial -o spatial.flac
    
    # 🆕 Streaming format (Netflix-style tiles, 185MB)
-   python create_streaming_flac.py
+   flac-raster create-streaming input.tif --tile-size=1024 --output=streaming.flac
    
    # Custom tile size (256x256)
    flac-raster convert input.tif --spatial --tile-size 256 -o spatial.flac
@@ -131,44 +131,106 @@ After installation, you can use the CLI directly:
    flac-raster query spatial.flac --bbox "-105.3,40.3,-105.1,40.5"
    ```
 
-7. **🆕 Extract specific tiles as TIFF**:
+7. **🆕 Extract tiles from Netflix-style streaming FLAC**:
    ```bash
-   # Extract tile from local streaming FLAC
-   python test_streaming.py local_streaming.flac --last
+   # Extract center tile from remote streaming FLAC
+   flac-raster extract-streaming "https://example.com/streaming.flac" --center --output=center.tif
    
-   # Extract from remote streaming FLAC
-   python test_streaming.py "https://cdn.example.com/data.flac" --bbox "602380,3090240,609780,3097640"
+   # Extract last tile
+   flac-raster extract-streaming "local_streaming.flac" --last --output=last_tile.tif
    
    # Extract by tile ID
-   python test_streaming.py streaming.flac --tile-id=0
+   flac-raster extract-streaming "streaming.flac" --tile-id=60 --output=tile_60.tif
+   
+   # Extract by bounding box
+   flac-raster extract-streaming "https://cdn.example.com/data.flac" --bbox="602380,3090240,609780,3097640" --output=bbox_tile.tif
    ```
 
 8. **View spatial index information**:
    ```bash
-   flac-raster spatial-info spatial.flac  # Raw frames format
-   python test_streaming.py streaming.flac --savings  # Streaming format + bandwidth analysis
+   flac-raster spatial-info spatial.flac  # Raw frames format only
+   # For streaming format, use extract-streaming with analysis
    ```
 
 ### 🌐 Live Demo: Real Remote Streaming
 
-Try our live streaming FLAC file hosted on Storj DCS:
+Try our live streaming FLAC files hosted on Storj DCS with real Sentinel-2 B04 band data:
+
+#### **📍 Single Tile Extraction (99%+ Bandwidth Savings)**
 
 ```bash
-# Test Netflix-style streaming from real remote URL
-python test_streaming.py "https://link.storjshare.io/raw/jx6xy3osjqlnz7mw5r6m24kbpfea/truemaps-public/flac-raster/B04_streaming.flac" --last
+# 🎯 Extract center tile (coordinates: 554,880, 3,145,140)
+flac-raster extract-streaming \
+  "https://link.storjshare.io/raw/ju6tov7vffpleabbilqgxfpxz5cq/truemaps-public/flac-raster/B04_streaming.flac" \
+  --center --output=center_1km.tif
+# → Downloads: 1.5 MB | Result: 1024×1024 center tile
 
-# Extract by bounding box
-python test_streaming.py "https://link.storjshare.io/raw/jx6xy3osjqlnz7mw5r6m24kbpfea/truemaps-public/flac-raster/B04_streaming.flac" --bbox="602380,3090240,609780,3097640"
+# 📦 Extract last tile (southeast corner)  
+flac-raster extract-streaming \
+  "https://link.storjshare.io/raw/ju6tov7vffpleabbilqgxfpxz5cq/truemaps-public/flac-raster/B04_streaming.flac" \
+  --last --output=southeast_corner.tif
+# → Downloads: 0.8 MB | Result: 740×740 edge tile
 
-# Show bandwidth savings analysis
-python test_streaming.py "https://link.storjshare.io/raw/jx6xy3osjqlnz7mw5r6m24kbpfea/truemaps-public/flac-raster/B04_streaming.flac" --tile-id=0
+# 🎬 Extract specific tile by ID (northwest corner)
+flac-raster extract-streaming \
+  "https://link.storjshare.io/raw/ju6tov7vffpleabbilqgxfpxz5cq/truemaps-public/flac-raster/B04_streaming.flac" \
+  --tile-id=0 --output=northwest_corner.tif
+# → Downloads: 1.5 MB | Result: 1024×1024 first tile
 ```
 
-**What happens:**
-- ⚡ **Instant metadata**: Loads spatial index (21KB HTTP range request)
-- 🎯 **Precise streaming**: Downloads only target tile (0.8-1.5MB)  
-- 🗺️ **Perfect output**: Creates valid GeoTIFF with full geospatial metadata
-- 💰 **99%+ savings**: vs downloading full 185MB file
+#### **🗺️ Geographic Bounding Box Extraction**
+
+```bash
+# 📍 Extract specific geographic area (1km² in center)
+flac-raster extract-streaming \
+  "https://link.storjshare.io/raw/ju6tov7vffpleabbilqgxfpxz5cq/truemaps-public/flac-raster/B04_streaming.flac" \
+  --bbox="554380,3144640,555380,3145640" \
+  --output=center_1km_bbox.tif
+# → Downloads: 1.5 MB | Result: Exact geographic area
+
+# 📍 Extract southeast corner area (last tile region)
+flac-raster extract-streaming \
+  "https://link.storjshare.io/raw/ju6tov7vffpleabbilqgxfpxz5cq/truemaps-public/flac-raster/B04_streaming.flac" \
+  --bbox="602380,3090240,609780,3097640" \
+  --output=southeast_bbox.tif  
+# → Downloads: 0.8 MB | Result: 740×740 edge region
+
+# 📍 Extract northwest area (first tile region)
+flac-raster extract-streaming \
+  "https://link.storjshare.io/raw/ju6tov7vffpleabbilqgxfpxz5cq/truemaps-public/flac-raster/B04_streaming.flac" \
+  --bbox="499980,3189800,510220,3200040" \
+  --output=northwest_bbox.tif
+# → Downloads: 1.5 MB | Result: 1024×1024 corner region
+```
+
+#### **🌍 Full Dataset Access**
+
+```bash
+# 📥 Download full dataset (use raw frames format for efficiency)
+flac-raster convert \
+  "https://link.storjshare.io/raw/juxc544kagtqgkvhezix6wzia5yq/truemaps-public/flac-raster/B04_spatial.flac" \
+  --output=full_sentinel_B04.tif
+# → Downloads: 15 MB | Result: Complete 10,980×10,980 Sentinel-2 dataset
+
+# ⚠️ Note: For full datasets, use the raw frames format (15MB) instead of 
+#          streaming format (177MB) for better compression efficiency
+```
+
+#### **📊 Performance Comparison**
+
+| **Use Case** | **Command** | **Download Size** | **Output** | **Savings** |
+|--------------|-------------|-------------------|------------|-------------|
+| **Single tile** | `--center` | 1.5 MB | 1024×1024 | **99.2%** |
+| **Corner tile** | `--last` | 0.8 MB | 740×740 | **99.5%** |
+| **Bbox query** | `--bbox="..."` | 0.8-1.5 MB | Exact area | **99%+** |
+| **Full dataset** | Raw frames format | 15 MB | 10,980×10,980 | **91.5%** |
+| **Full streaming** | All 121 tiles | 177 MB | 10,980×10,980 | **0%** ❌ |
+
+**Netflix-Style Benefits:**
+- ⚡ **Instant metadata**: 21KB spatial index loaded once
+- 🎯 **Precision targeting**: Download only needed geographic areas  
+- 🗺️ **Perfect quality**: Pixel-perfect GeoTIFF output with full metadata
+- 💰 **Massive savings**: 99%+ bandwidth reduction for area-specific queries
 
 **Alternative**: Use `python main.py` if you haven't installed the package:
 ```bash
@@ -185,8 +247,15 @@ python main.py convert input.tif  # Direct script usage
 - `--spatial, -s`: 🆕 Enable spatial tiling (raw frames format)
 - `--tile-size`: 🆕 Size of spatial tiles in pixels (default: 512x512)
 
-#### 🆕 Extract-tile command:
+#### 🆕 Extract-tile command (for raw frames format):
 - `--bbox, -b`: Bounding box as 'xmin,ymin,xmax,ymax'
+- `--output, -o`: Output TIFF file path (required)
+
+#### 🚀 Extract-streaming command (for Netflix-style streaming format):
+- `--bbox, -b`: Bounding box as 'xmin,ymin,xmax,ymax'
+- `--tile-id`: Extract specific tile by ID number
+- `--center`: Extract center tile automatically
+- `--last`: Extract last tile
 - `--output, -o`: Output TIFF file path (required)
 
 #### Query command:

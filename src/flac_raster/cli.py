@@ -872,5 +872,172 @@ def spatial_info(
         raise typer.Exit(1)
 
 
+@app.command("extract-streaming")
+def extract_streaming(
+    flac_url: str = typer.Argument(..., help="Streaming FLAC file (local path or HTTP URL)"),
+    bbox: Optional[str] = typer.Option(None, "--bbox", "-b", help="Bounding box as 'xmin,ymin,xmax,ymax'"),
+    tile_id: Optional[int] = typer.Option(None, "--tile-id", help="Extract specific tile by ID"),
+    output: Path = typer.Option(..., "--output", "-o", help="Output TIFF file path"),
+    center: bool = typer.Option(False, "--center", help="Extract center tile"),
+    last: bool = typer.Option(False, "--last", help="Extract last tile")
+):
+    """Extract tiles from Netflix-style streaming FLAC files"""
+    
+    try:
+        import struct
+        import json
+        import requests
+        import tempfile
+        from .converter import RasterFLACConverter
+        
+        console.print(f"[cyan]Loading streaming FLAC metadata from: {flac_url}[/cyan]")
+        
+        # Determine if it's a URL or local file
+        is_url = isinstance(flac_url, str) and flac_url.startswith(('http://', 'https://'))
+        
+        # Read streaming metadata
+        if is_url:
+            # Get index size (first 4 bytes)
+            response = requests.get(flac_url, headers={'Range': 'bytes=0-3'})
+            if response.status_code != 206:
+                raise ValueError(f"Server doesn't support range requests: {response.status_code}")
+            
+            index_size = struct.unpack('>I', response.content)[0]
+            
+            # Get the spatial index JSON
+            response = requests.get(flac_url, headers={'Range': f'bytes=4-{3 + index_size}'})
+            if response.status_code != 206:
+                raise ValueError(f"Failed to get spatial index: {response.status_code}")
+            
+            metadata = json.loads(response.content.decode('utf-8'))
+        else:
+            # Local file
+            with open(flac_url, 'rb') as f:
+                index_size_bytes = f.read(4)
+                index_size = struct.unpack('>I', index_size_bytes)[0]
+                json_data = f.read(index_size)
+                metadata = json.loads(json_data.decode('utf-8'))
+        
+        console.print(f"[green]Loaded metadata with {len(metadata['frames'])} tiles[/green]")
+        
+        # Determine which tile to extract
+        target_frame = None
+        
+        if tile_id is not None:
+            # Extract by tile ID
+            for frame in metadata['frames']:
+                if frame['frame_id'] == tile_id:
+                    target_frame = frame
+                    break
+            if not target_frame:
+                console.print(f"[red]Error: Tile ID {tile_id} not found[/red]")
+                raise typer.Exit(1)
+                
+        elif last:
+            # Extract last tile
+            target_frame = max(metadata['frames'], key=lambda f: f['frame_id'])
+            
+        elif center:
+            # Extract center tile
+            frames = metadata['frames']
+            all_bboxes = [frame['bbox'] for frame in frames]
+            min_x = min(bbox[0] for bbox in all_bboxes)
+            min_y = min(bbox[1] for bbox in all_bboxes)
+            max_x = max(bbox[2] for bbox in all_bboxes)
+            max_y = max(bbox[3] for bbox in all_bboxes)
+            
+            center_x = (min_x + max_x) / 2
+            center_y = (min_y + max_y) / 2
+            
+            # Find closest tile to center
+            min_distance = float('inf')
+            for frame in frames:
+                frame_center_x = (frame['bbox'][0] + frame['bbox'][2]) / 2
+                frame_center_y = (frame['bbox'][1] + frame['bbox'][3]) / 2
+                distance = ((frame_center_x - center_x) ** 2 + (frame_center_y - center_y) ** 2) ** 0.5
+                if distance < min_distance:
+                    min_distance = distance
+                    target_frame = frame
+                    
+        elif bbox:
+            # Extract by bounding box
+            try:
+                bbox_coords = [float(x.strip()) for x in bbox.split(',')]
+                if len(bbox_coords) != 4:
+                    raise ValueError("Bbox must have exactly 4 coordinates")
+            except (ValueError, IndexError) as e:
+                console.print(f"[red]Error: Invalid bbox format. Use 'xmin,ymin,xmax,ymax': {e}[/red]")
+                raise typer.Exit(1)
+            
+            # Find intersecting tiles
+            intersecting_frames = []
+            for frame in metadata['frames']:
+                frame_bbox = frame['bbox']
+                if (bbox_coords[0] < frame_bbox[2] and bbox_coords[2] > frame_bbox[0] and
+                    bbox_coords[1] < frame_bbox[3] and bbox_coords[3] > frame_bbox[1]):
+                    intersecting_frames.append(frame)
+            
+            if not intersecting_frames:
+                console.print(f"[red]Error: No tiles intersect with bbox {bbox}[/red]")
+                raise typer.Exit(1)
+            
+            if len(intersecting_frames) > 1:
+                console.print(f"[yellow]Warning: Multiple tiles ({len(intersecting_frames)}) intersect. Using first one.[/yellow]")
+            
+            target_frame = intersecting_frames[0]
+        else:
+            console.print(f"[red]Error: Must specify --tile-id, --bbox, --center, or --last[/red]")
+            raise typer.Exit(1)
+        
+        console.print(f"[cyan]Extracting tile {target_frame['frame_id']}:[/cyan]")
+        console.print(f"  Bbox: {target_frame['bbox']}")
+        console.print(f"  Size: {target_frame['byte_size']:,} bytes ({target_frame['byte_size']/1024/1024:.1f} MB)")
+        
+        # Download the specific tile
+        header_size = 4 + index_size
+        abs_start = header_size + target_frame['byte_offset']
+        abs_end = abs_start + target_frame['byte_size'] - 1
+        
+        if is_url:
+            console.print(f"[cyan]Downloading tile from remote URL...[/cyan]")
+            response = requests.get(flac_url, headers={'Range': f'bytes={abs_start}-{abs_end}'})
+            if response.status_code != 206:
+                raise ValueError(f"Failed to download tile: {response.status_code}")
+            tile_data = response.content
+        else:
+            console.print(f"[cyan]Reading tile from local file...[/cyan]")
+            with open(flac_url, 'rb') as f:
+                f.seek(abs_start)
+                tile_data = f.read(target_frame['byte_size'])
+        
+        console.print(f"[green]Retrieved {len(tile_data):,} bytes[/green]")
+        
+        # Save as temporary FLAC file and convert
+        with tempfile.NamedTemporaryFile(suffix='.flac', delete=False) as temp_flac:
+            temp_flac.write(tile_data)
+            temp_flac_path = temp_flac.name
+        
+        try:
+            console.print(f"[cyan]Converting to TIFF: {output}[/cyan]")
+            converter = RasterFLACConverter()
+            converter.flac_to_tiff(Path(temp_flac_path), output)
+            
+            console.print(f"[bold green]SUCCESS: Extracted tile to {output}[/bold green]")
+            console.print(f"[green]Geographic bounds: {target_frame['bbox']}[/green]")
+            
+            # Show bandwidth savings
+            total_bytes = sum(frame['byte_size'] for frame in metadata['frames'])
+            savings_percent = (1 - target_frame['byte_size'] / total_bytes) * 100
+            console.print(f"[blue]Bandwidth savings: {savings_percent:.1f}% ({target_frame['byte_size']/1024/1024:.1f} MB vs {total_bytes/1024/1024:.1f} MB)[/blue]")
+            
+        finally:
+            Path(temp_flac_path).unlink()
+            
+    except Exception as e:
+        logger.exception("Streaming extraction failed")
+        console.print(f"[red]Error during streaming extraction: {e}[/red]")
+        raise typer.Exit(1)
+
+
 if __name__ == "__main__":
     app()
