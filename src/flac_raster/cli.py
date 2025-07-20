@@ -36,7 +36,9 @@ def convert(
     compression_level: int = typer.Option(5, "--compression", "-c", min=0, max=8, 
                                          help="FLAC compression level (0-8)"),
     force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing output file"),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging")
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging"),
+    spatial_tiling: bool = typer.Option(False, "--spatial", "-s", help="Enable spatial tiling for HTTP range streaming"),
+    tile_size: int = typer.Option(512, "--tile-size", help="Size of spatial tiles (default: 512x512)")
 ):
     """Convert between TIFF and FLAC formats"""
     
@@ -79,7 +81,10 @@ def convert(
     
     try:
         if conversion_type == "tiff_to_flac":
-            converter.tiff_to_flac(input_file, output_file, compression_level)
+            result = converter.tiff_to_flac(input_file, output_file, compression_level, 
+                                          spatial_tiling, tile_size)
+            if spatial_tiling and result:
+                console.print(f"[green]Spatial index created with {len(result.frames)} tiles[/green]")
         else:
             converter.flac_to_tiff(input_file, output_file)
     except Exception as e:
@@ -129,21 +134,65 @@ def info(
             console.print(f"  [red]Error reading FLAC file: {e}[/red]")
             console.print(f"  File size: {file_path.stat().st_size / 1024 / 1024:.2f} MB")
         
-        # Check for sidecar metadata file
-        metadata_path = file_path.with_suffix('.json')
-        if metadata_path.exists():
-            with open(metadata_path, 'r') as f:
-                metadata = json.load(f)
-                console.print(f"\n[yellow]Raster Metadata (from {metadata_path.name}):[/yellow]")
-                console.print(f"  Original dimensions: {metadata['width']} x {metadata['height']}")
-                console.print(f"  Original bands: {metadata['count']}")
-                console.print(f"  Original dtype: {metadata['dtype']}")
-                console.print(f"  CRS: {metadata.get('crs', 'None')}")
-                if metadata.get('bounds'):
-                    b = metadata['bounds']
-                    console.print(f"  Bounds: ({b['left']}, {b['bottom']}, {b['right']}, {b['top']})")
-        else:
-            console.print(f"\n[yellow]No metadata file found[/yellow]")
+        # Try to read embedded metadata first, then fall back to sidecar
+        metadata = None
+        try:
+            from mutagen.flac import FLAC
+            flac_file = FLAC(str(file_path))
+            
+            if "GEOSPATIAL_CRS" in flac_file:
+                console.print(f"\n[green]Embedded Geospatial Metadata:[/green]")
+                width = flac_file.get('GEOSPATIAL_WIDTH', ['N/A'])[0]
+                height = flac_file.get('GEOSPATIAL_HEIGHT', ['N/A'])[0] 
+                count = flac_file.get('GEOSPATIAL_COUNT', ['N/A'])[0]
+                dtype = flac_file.get('GEOSPATIAL_DTYPE', ['N/A'])[0]
+                crs = flac_file.get('GEOSPATIAL_CRS', ['N/A'])[0]
+                data_min = flac_file.get('GEOSPATIAL_DATA_MIN', ['N/A'])[0]
+                data_max = flac_file.get('GEOSPATIAL_DATA_MAX', ['N/A'])[0]
+                
+                console.print(f"  Original dimensions: {width} x {height}")
+                console.print(f"  Original bands: {count}")
+                console.print(f"  Original dtype: {dtype}")
+                console.print(f"  CRS: {crs}")
+                console.print(f"  Data range: [{data_min}, {data_max}]")
+                
+                # Check for spatial tiling
+                spatial_tiling = flac_file.get('GEOSPATIAL_SPATIAL_TILING', ['false'])[0].lower() == 'true'
+                if spatial_tiling:
+                    num_tiles = flac_file.get('GEOSPATIAL_NUM_TILES', ['N/A'])[0]
+                    tile_size = flac_file.get('GEOSPATIAL_TILE_SIZE', ['N/A'])[0]
+                    console.print(f"  Spatial tiling: {num_tiles} tiles of {tile_size}x{tile_size}")
+                else:
+                    console.print(f"  Spatial tiling: No")
+                    
+                # Show bounds if available
+                bounds_str = flac_file.get('GEOSPATIAL_BOUNDS', [None])[0]
+                if bounds_str:
+                    bounds = json.loads(bounds_str)
+                    console.print(f"  Bounds: ({bounds[0]:.6f}, {bounds[1]:.6f}, {bounds[2]:.6f}, {bounds[3]:.6f})")
+                    
+                metadata = True
+            else:
+                raise ValueError("No embedded metadata")
+                
+        except Exception:
+            # Fall back to sidecar file
+            metadata_path = file_path.with_suffix('.json')
+            if metadata_path.exists():
+                with open(metadata_path, 'r') as f:
+                    metadata_json = json.load(f)
+                    console.print(f"\n[yellow]Raster Metadata (from {metadata_path.name}):[/yellow]")
+                    console.print(f"  Original dimensions: {metadata_json['width']} x {metadata_json['height']}")
+                    console.print(f"  Original bands: {metadata_json['count']}")
+                    console.print(f"  Original dtype: {metadata_json['dtype']}")
+                    console.print(f"  CRS: {metadata_json.get('crs', 'None')}")
+                    if metadata_json.get('bounds'):
+                        b = metadata_json['bounds']
+                        console.print(f"  Bounds: ({b['left']}, {b['bottom']}, {b['right']}, {b['top']})")
+                metadata = True
+                
+        if not metadata:
+            console.print(f"\n[yellow]No embedded or sidecar metadata found[/yellow]")
     else:
         console.print(f"[red]Error: Unsupported file format: {suffix}[/red]")
         raise typer.Exit(1)
@@ -192,6 +241,186 @@ def compare(
     except Exception as e:
         logger.exception("Comparison failed")
         console.print(f"[red]Error during comparison: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command()
+def query(
+    flac_file: str = typer.Argument(..., help="Spatial FLAC file to query (local path or HTTP URL)"),
+    bbox: str = typer.Option(..., "--bbox", "-b", help="Bounding box as 'xmin,ymin,xmax,ymax'"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file for extracted data"),
+    format: str = typer.Option("ranges", "--format", "-f", help="Output format: 'ranges' or 'data'")
+):
+    """Query spatial FLAC file by bounding box for HTTP range streaming"""
+    
+    # Check if it's a URL or local file
+    is_url = flac_file.startswith(('http://', 'https://'))
+    
+    if not is_url:
+        # Local file validation
+        flac_path = Path(flac_file)
+        if not flac_path.exists():
+            console.print(f"[red]Error: FLAC file does not exist: {flac_file}[/red]")
+            raise typer.Exit(1)
+        flac_file_obj = flac_path
+    else:
+        # URL validation
+        flac_file_obj = flac_file
+        
+    # Parse bbox
+    try:
+        bbox_coords = [float(x.strip()) for x in bbox.split(',')]
+        if len(bbox_coords) != 4:
+            raise ValueError("Bbox must have 4 coordinates")
+        bbox_tuple = tuple(bbox_coords)
+    except (ValueError, IndexError) as e:
+        console.print(f"[red]Error: Invalid bbox format. Use 'xmin,ymin,xmax,ymax': {e}[/red]")
+        raise typer.Exit(1)
+    
+    try:
+        from .spatial_encoder import SpatialFLACStreamer
+        
+        # Create streamer
+        streamer = SpatialFLACStreamer(flac_file_obj)
+        
+        if format == "ranges":
+            # Get HTTP byte ranges
+            ranges = streamer.get_byte_ranges_for_bbox(bbox_tuple)
+            
+            console.print(f"[green]Found {len(ranges)} byte ranges for bbox {bbox}[/green]")
+            
+            # Create ranges table
+            from rich.table import Table
+            if is_url:
+                file_display = flac_file.split('/')[-1]  # Show just filename for URLs
+            else:
+                file_display = flac_file_obj.name
+            table = Table(title=f"HTTP Byte Ranges for {file_display}")
+            table.add_column("Range #", style="cyan")
+            table.add_column("Start Byte", style="green")
+            table.add_column("End Byte", style="yellow") 
+            table.add_column("Size (bytes)", style="blue")
+            table.add_column("HTTP Range Header", style="magenta")
+            
+            total_bytes = 0
+            for i, (start, end) in enumerate(ranges, 1):
+                size = end - start + 1
+                total_bytes += size
+                range_header = f"bytes={start}-{end}"
+                table.add_row(
+                    str(i),
+                    f"{start:,}",
+                    f"{end:,}",
+                    f"{size:,}",
+                    range_header
+                )
+                
+            console.print(table)
+            console.print(f"[bold]Total data to fetch: {total_bytes:,} bytes[/bold]")
+            
+            # Save ranges to file if requested
+            if output:
+                ranges_data = {
+                    "bbox": bbox_coords,
+                    "total_ranges": len(ranges),
+                    "total_bytes": total_bytes,
+                    "ranges": [{"start": start, "end": end, "size": end - start + 1} 
+                              for start, end in ranges],
+                    "http_headers": [f"bytes={start}-{end}" for start, end in ranges]
+                }
+                
+                with open(output, 'w') as f:
+                    json.dump(ranges_data, f, indent=2)
+                console.print(f"[green]Ranges saved to: {output}[/green]")
+                
+        elif format == "data":
+            # Stream actual data
+            console.print(f"[cyan]Streaming data for bbox {bbox}...[/cyan]")
+            data = streamer.stream_bbox_data(bbox_tuple)
+            
+            console.print(f"[green]Extracted {len(data):,} bytes of FLAC data[/green]")
+            
+            if output:
+                with open(output, 'wb') as f:
+                    f.write(data)
+                console.print(f"[green]Data saved to: {output}[/green]")
+            else:
+                console.print("[yellow]Use --output to save extracted data to file[/yellow]")
+                
+        else:
+            console.print(f"[red]Error: Unknown format '{format}'. Use 'ranges' or 'data'[/red]")
+            raise typer.Exit(1)
+            
+    except FileNotFoundError as e:
+        console.print(f"[red]Error: Spatial index not found. File may not have spatial tiling enabled: {e}[/red]")
+        raise typer.Exit(1)
+    except Exception as e:
+        logger.exception("Query failed")
+        console.print(f"[red]Error during query: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command()
+def spatial_info(
+    flac_file: Path = typer.Argument(..., help="Spatial FLAC file to analyze")
+):
+    """Show spatial index information for FLAC file"""
+    
+    # Validate input
+    if not flac_file.exists():
+        console.print(f"[red]Error: FLAC file does not exist: {flac_file}[/red]")
+        raise typer.Exit(1)
+        
+    try:
+        from .spatial_encoder import SpatialFLACStreamer
+        from rich.table import Table
+        
+        # Create streamer
+        streamer = SpatialFLACStreamer(flac_file)
+        spatial_index = streamer.spatial_index
+        
+        # Display overview
+        console.print(f"[green]Spatial FLAC File: {flac_file.name}[/green]")
+        console.print(f"CRS: {spatial_index.crs}")
+        console.print(f"Transform: {spatial_index.transform}")
+        console.print(f"Total frames/tiles: {len(spatial_index.frames)}")
+        
+        # Create frames table
+        table = Table(title="Spatial Frames")
+        table.add_column("Frame ID", style="cyan")
+        table.add_column("Bbox (xmin, ymin, xmax, ymax)", style="green")
+        table.add_column("Window (col, row, width, height)", style="yellow")
+        table.add_column("Byte Range", style="blue")
+        table.add_column("Size", style="magenta")
+        
+        total_bytes = 0
+        for frame in spatial_index.frames[:10]:  # Show first 10 frames
+            bbox_str = f"({frame.bbox[0]:.6f}, {frame.bbox[1]:.6f}, {frame.bbox[2]:.6f}, {frame.bbox[3]:.6f})"
+            window_str = f"({frame.window.col_off}, {frame.window.row_off}, {frame.window.width}, {frame.window.height})"
+            byte_range = f"{frame.byte_offset}-{frame.byte_offset + frame.byte_size - 1}"
+            
+            table.add_row(
+                str(frame.frame_id),
+                bbox_str,
+                window_str,
+                byte_range,
+                f"{frame.byte_size:,} bytes"
+            )
+            total_bytes += frame.byte_size
+            
+        console.print(table)
+        
+        if len(spatial_index.frames) > 10:
+            console.print(f"[yellow]... and {len(spatial_index.frames) - 10} more frames[/yellow]")
+            
+        console.print(f"[bold]Total indexed data: {total_bytes:,} bytes[/bold]")
+        
+    except FileNotFoundError as e:
+        console.print(f"[red]Error: Spatial index not found. File may not have spatial tiling enabled: {e}[/red]")
+        raise typer.Exit(1)
+    except Exception as e:
+        logger.exception("Spatial info failed")
+        console.print(f"[red]Error reading spatial info: {e}[/red]")
         raise typer.Exit(1)
 
 

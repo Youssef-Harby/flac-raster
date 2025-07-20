@@ -15,7 +15,9 @@ jobs:
   test:
     name: Test on ${{ matrix.os }} - Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ["3.9", "3.10", "3.11", "3.12"]
@@ -82,18 +84,55 @@ jobs:
         flac-raster info test_data/sample_dem.tif
         flac-raster info test_data/sample_dem.flac
 
+    - name: Test spatial tiling and HTTP range streaming
+      run: |
+        # Test spatial conversion
+        flac-raster convert test_data/sample_dem.tif -o test_data/dem_spatial.flac --spatial --tile-size=256 --force
+        flac-raster spatial-info test_data/dem_spatial.flac
+        
+        # Test bbox queries (local files only in CI)
+        flac-raster query test_data/dem_spatial.flac --bbox="34.0,28.5,34.5,29.0"
+        
+        # Test RGB spatial conversion
+        flac-raster convert test_data/sample_rgb.tif -o test_data/rgb_spatial.flac --spatial --tile-size=128 --force
+        flac-raster spatial-info test_data/rgb_spatial.flac
+        flac-raster query test_data/rgb_spatial.flac --bbox="-120.0,36.98,-119.98,37.0"
+
     - name: Validate package structure
       run: |
         # Test that the package can be imported
         python -c "from src.flac_raster.converter import RasterFLACConverter; print('Package imports correctly')"
         python -c "from src.flac_raster.compare import compare_tiffs; print('Compare module imports correctly')"
         python -c "from src.flac_raster.cli import app; print('CLI module imports correctly')"
+        python -c "from src.flac_raster.spatial_encoder import SpatialFLACStreamer; print('Spatial encoder imports correctly')"
 
-    - name: Run unit tests (if they exist)
+    - name: Run integration tests
       run: |
-        # For now, just run integration tests via CLI
+        # Run integration tests for core functionality
         echo "Running integration tests via CLI commands..."
-        echo "Unit tests will be added in future versions"
+        
+        # Test lazy loading integration (local only, no internet dependency in CI)
+        python -c "
+        import sys, os
+        sys.path.insert(0, os.path.join('src'))
+        from flac_raster.spatial_encoder import SpatialFLACStreamer
+        from pathlib import Path
+        
+        # Test local spatial FLAC loading
+        test_file = Path('test_data/dem_spatial.flac')
+        if test_file.exists():
+            streamer = SpatialFLACStreamer(test_file)
+            print(f'[OK] Loaded spatial index with {len(streamer.spatial_index.frames)} tiles')
+            print(f'[OK] Total bytes: {streamer.spatial_index.total_bytes:,}')
+            
+            # Test bbox query
+            ranges = streamer.get_byte_ranges_for_bbox((34.0, 28.5, 34.5, 29.0))
+            print(f'[OK] Bbox query returned {len(ranges)} byte ranges')
+            print('[OK] All spatial encoding tests passed!')
+        else:
+            print('[ERROR] Spatial test file not found')
+            sys.exit(1)
+        "
 
   build:
     name: Build package

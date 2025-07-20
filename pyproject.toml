@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "flac-raster"
-version = "0.1.0"
+version = "0.1.1"
 description = "Experimental CLI tool for converting TIFF raster data to FLAC format"
 readme = "README.md"
 license = {text = "MIT"}
@@ -24,7 +24,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
 ]
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 dependencies = [
     "numpy",
     "rasterio",
@@ -32,6 +32,8 @@ dependencies = [
     "rich",
     "tqdm",
     "pyflac",
+    "mutagen",
+    "requests",
 ]
 
 [project.optional-dependencies]

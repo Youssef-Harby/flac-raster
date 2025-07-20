@@ -2,10 +2,10 @@ import rasterio
 import numpy as np
 
 # Read original and reconstructed
-with rasterio.open('testing_dataset/dem-raw.tif') as src1:
+with rasterio.open('test_data/dem-raw.tif') as src1:
     data1 = src1.read(1)
     
-with rasterio.open('testing_dataset/dem-reconstructed.tif') as src2:
+with rasterio.open('test_data/dem-reconstructed.tif') as src2:
     data2 = src2.read(1)
 
 # Compare

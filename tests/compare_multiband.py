@@ -2,10 +2,10 @@ import rasterio
 import numpy as np
 
 # Read original and reconstructed
-with rasterio.open('testing_dataset/multiband_test.tif') as src1:
+with rasterio.open('test_data/multiband_test.tif') as src1:
     data1 = src1.read()  # Read all bands
     
-with rasterio.open('testing_dataset/multiband_reconstructed.tif') as src2:
+with rasterio.open('test_data/multiband_reconstructed.tif') as src2:
     data2 = src2.read()  # Read all bands
 
 # Compare

@@ -4,7 +4,7 @@ Core converter functionality for FLAC-Raster
 import json
 import logging
 from pathlib import Path
-from typing import Tuple
+from typing import Tuple, Dict, Optional
 import numpy as np
 import rasterio
 from rasterio.crs import CRS
@@ -109,11 +109,30 @@ class RasterFLACConverter:
             data_denorm = (data_norm + 1.0) / 2.0 * (data_max - data_min) + data_min
             return np.round(data_denorm).astype(original_dtype)
     
-    def tiff_to_flac(self, tiff_path: Path, flac_path: Path, compression_level: int = 5):
-        """Convert TIFF raster to FLAC format"""
+    def tiff_to_flac(self, tiff_path: Path, flac_path: Path, compression_level: int = 5, 
+                     spatial_tiling: bool = False, tile_size: int = 512):
+        """Convert TIFF raster to FLAC format
+        
+        Args:
+            tiff_path: Input TIFF file path
+            flac_path: Output FLAC file path  
+            compression_level: FLAC compression level (0-8)
+            spatial_tiling: Enable spatial tiling for HTTP range streaming
+            tile_size: Size of spatial tiles (default 512x512)
+        """
         self.logger.info(f"Starting TIFF to FLAC conversion: {tiff_path} -> {flac_path}")
         self.logger.info(f"Compression level: {compression_level}")
+        if spatial_tiling:
+            self.logger.info(f"Spatial tiling enabled: {tile_size}x{tile_size} tiles")
+            console.print(f"[cyan]Using spatial tiling for HTTP range streaming[/cyan]")
         console.print(f"[cyan]Reading TIFF file: {tiff_path}[/cyan]")
+        
+        # Use spatial encoder if spatial tiling is enabled
+        if spatial_tiling:
+            from .spatial_encoder import SpatialFLACEncoder
+            encoder = SpatialFLACEncoder(tile_size=tile_size)
+            spatial_index = encoder.encode_spatial_flac(tiff_path, flac_path, compression_level)
+            return spatial_index
         
         with rasterio.open(tiff_path) as src:
             # Read raster data and metadata
@@ -190,14 +209,6 @@ class RasterFLACConverter:
             encoder._channels = channels
             encoder._bits_per_sample = bits_per_sample
             
-            # Save metadata as sidecar JSON file
-            metadata_json = json.dumps(raster_metadata, indent=2)
-            metadata_path = flac_path.with_suffix('.json')
-            self.logger.info(f"Saving metadata to: {metadata_path}")
-            with open(metadata_path, 'w') as f:
-                f.write(metadata_json)
-            self.logger.debug(f"Metadata size: {len(metadata_json)} bytes")
-            
             # Process and encode data
             console.print("[cyan]Encoding to FLAC...[/cyan]")
             self.logger.info(f"Processing {audio_data.shape[0]:,} samples")
@@ -207,6 +218,9 @@ class RasterFLACConverter:
             # Close the output file
             if hasattr(self, 'output_file'):
                 self.output_file.close()
+                
+            # Embed metadata directly in FLAC file (after encoding is complete)
+            self._embed_metadata_in_flac(flac_path, raster_metadata)
             
             output_size = flac_path.stat().st_size
             input_size = tiff_path.stat().st_size
@@ -228,20 +242,13 @@ class RasterFLACConverter:
         audio_data, sample_rate = decoder.process()
         self.logger.info(f"Decoded audio shape: {audio_data.shape}, dtype: {audio_data.dtype}, sample_rate: {sample_rate}")
         
-        # Load metadata from sidecar JSON file
-        metadata_path = flac_path.with_suffix('.json')
-        self.logger.info(f"Loading metadata from: {metadata_path}")
-        
-        if not metadata_path.exists():
-            self.logger.error(f"Metadata file not found: {metadata_path}")
-            raise ValueError(f"Metadata file not found: {metadata_path}")
-        
-        with open(metadata_path, 'r') as f:
-            metadata = json.load(f)
+        # Load metadata from embedded FLAC metadata or fallback to sidecar
+        self.logger.info("Loading metadata from FLAC file")
+        metadata = self._read_embedded_metadata(flac_path)
         
         if not metadata:
-            self.logger.error("No raster metadata found in FLAC file")
-            raise ValueError("No raster metadata found in FLAC file")
+            self.logger.error("No metadata found in FLAC file or sidecar file")
+            raise ValueError("No metadata found in FLAC file or sidecar file")
         
         self.logger.debug(f"Found metadata: {list(metadata.keys())}")
         
@@ -304,6 +311,120 @@ class RasterFLACConverter:
         output_size = tiff_path.stat().st_size
         self.logger.info(f"TIFF written successfully: {output_size / 1024 / 1024:.2f} MB")
         console.print(f"[green]SUCCESS: Converted to TIFF: {tiff_path}[/green]")
+        
+    def _embed_metadata_in_flac(self, flac_path: Path, metadata: Dict):
+        """Embed geospatial metadata directly in FLAC file"""
+        try:
+            from mutagen.flac import FLAC
+            
+            # Open FLAC file for metadata editing
+            flac_file = FLAC(str(flac_path))
+            
+            # Clear existing comments
+            flac_file.clear()
+            
+            # Standard FLAC metadata
+            flac_file["TITLE"] = "Geospatial Raster Data"
+            flac_file["DESCRIPTION"] = "TIFF raster converted to FLAC with geospatial metadata"
+            flac_file["ENCODER"] = "FLAC-Raster v0.1.0"
+            
+            # Core geospatial metadata
+            flac_file["GEOSPATIAL_CRS"] = str(metadata.get("crs", ""))
+            flac_file["GEOSPATIAL_WIDTH"] = str(metadata.get("width", 0))
+            flac_file["GEOSPATIAL_HEIGHT"] = str(metadata.get("height", 0))
+            flac_file["GEOSPATIAL_COUNT"] = str(metadata.get("count", 1))
+            flac_file["GEOSPATIAL_DTYPE"] = str(metadata.get("dtype", ""))
+            flac_file["GEOSPATIAL_NODATA"] = str(metadata.get("nodata", ""))
+            flac_file["GEOSPATIAL_DATA_MIN"] = str(metadata.get("data_min", ""))
+            flac_file["GEOSPATIAL_DATA_MAX"] = str(metadata.get("data_max", ""))
+            
+            # Transform and bounds as JSON
+            flac_file["GEOSPATIAL_TRANSFORM"] = json.dumps(metadata.get("transform", []))
+            flac_file["GEOSPATIAL_BOUNDS"] = json.dumps(metadata.get("bounds", []))
+            
+            # Spatial tiling info
+            flac_file["GEOSPATIAL_SPATIAL_TILING"] = str(metadata.get("spatial_tiling", False))
+            
+            # Save metadata to FLAC file
+            flac_file.save()
+            
+            self.logger.info("[SUCCESS] Embedded complete metadata in FLAC file (no sidecar needed)")
+            console.print(f"[green][SUCCESS] All metadata embedded in FLAC file - no sidecar files needed![/green]")
+            
+        except ImportError:
+            self.logger.warning("mutagen not available - falling back to JSON sidecar")
+            console.print(f"[yellow][WARNING] Install mutagen for embedded metadata: pip install mutagen[/yellow]")
+            
+            # Fallback to JSON sidecar
+            metadata_json = json.dumps(metadata, indent=2)
+            metadata_path = flac_path.with_suffix('.json')
+            self.logger.info(f"Saving metadata to: {metadata_path}")
+            with open(metadata_path, 'w') as f:
+                f.write(metadata_json)
+                
+        except Exception as e:
+            self.logger.error(f"Failed to embed metadata: {e}")
+            console.print(f"[red][ERROR] Failed to embed metadata: {e}[/red]")
+            
+            # Fallback to JSON sidecar
+            metadata_json = json.dumps(metadata, indent=2)
+            metadata_path = flac_path.with_suffix('.json')
+            with open(metadata_path, 'w') as f:
+                f.write(metadata_json)
+                
+    def _read_embedded_metadata(self, flac_path: Path) -> Optional[Dict]:
+        """Read embedded metadata from FLAC file"""
+        try:
+            from mutagen.flac import FLAC
+            
+            flac_file = FLAC(str(flac_path))
+            
+            if "GEOSPATIAL_CRS" in flac_file:
+                self.logger.info("Reading metadata from embedded FLAC metadata")
+                
+                metadata = {}
+                
+                # Extract geospatial fields
+                geo_fields = [
+                    "GEOSPATIAL_CRS", "GEOSPATIAL_WIDTH", "GEOSPATIAL_HEIGHT",
+                    "GEOSPATIAL_COUNT", "GEOSPATIAL_DTYPE", "GEOSPATIAL_NODATA",
+                    "GEOSPATIAL_DATA_MIN", "GEOSPATIAL_DATA_MAX", "GEOSPATIAL_TRANSFORM",
+                    "GEOSPATIAL_BOUNDS", "GEOSPATIAL_SPATIAL_TILING"
+                ]
+                
+                for field in geo_fields:
+                    if field in flac_file:
+                        value = flac_file[field][0]
+                        key = field.replace("GEOSPATIAL_", "").lower()
+                        
+                        # Convert types
+                        if key in ["width", "height", "count"]:
+                            metadata[key] = int(value) if value else 0
+                        elif key in ["data_min", "data_max"]:
+                            metadata[key] = float(value) if value else 0.0
+                        elif key in ["transform", "bounds"]:
+                            metadata[key] = json.loads(value) if value else []
+                        elif key == "spatial_tiling":
+                            metadata[key] = value.lower() == "true"
+                        elif key == "nodata":
+                            metadata[key] = None if value == "None" else float(value) if value else None
+                        else:
+                            metadata[key] = value
+                            
+                return metadata
+            else:
+                raise ValueError("No embedded metadata found")
+                
+        except (ImportError, Exception) as e:
+            self.logger.warning(f"Failed to read embedded metadata: {e}")
+            
+            # Fallback to JSON sidecar
+            metadata_path = flac_path.with_suffix('.json')
+            if metadata_path.exists():
+                with open(metadata_path, 'r') as f:
+                    return json.load(f)
+                    
+        return None
     
     def _get_write_callback(self, output_path: Path):
         """Create a write callback for FLAC encoder"""

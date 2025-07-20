@@ -3,7 +3,7 @@ authors = ["Youssef-Harby <me@youssefharby.com>"]
 channels = ["conda-forge"]
 name = "flac-raster"
 platforms = ["win-64", "linux-64", "osx-64", "osx-arm64"]
-version = "0.1.0"
+version = "0.1.1"
 
 [tasks]
 
@@ -16,6 +16,8 @@ rich = ">=14.0.0,<15"
 tqdm = ">=4.67.1,<5"
 pytest = ">=8.4.1,<9"
 pytest-cov = ">=6.2.1,<7"
+mutagen = ">=1.47.0,<2"
 
 [pypi-dependencies]
 pyflac = ">=3.0.0, <4"
+requests = ">=2.32.4, <3"
