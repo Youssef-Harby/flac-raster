@@ -1,0 +1,28 @@
+{
+  "width": 256,
+  "height": 256,
+  "count": 3,
+  "dtype": "uint8",
+  "crs": "EPSG:4326",
+  "transform": [
+    0.0001,
+    0.0,
+    -120.0,
+    0.0,
+    -0.0001,
+    37.0,
+    0.0,
+    0.0,
+    1.0
+  ],
+  "bounds": {
+    "left": -120.0,
+    "bottom": 36.9744,
+    "right": -119.9744,
+    "top": 37.0
+  },
+  "data_min": 1.0,
+  "data_max": 255.0,
+  "nodata": null,
+  "driver": "GTiff"
+}
