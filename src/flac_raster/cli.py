@@ -95,18 +95,33 @@ def convert(
 
 @app.command()
 def info(
-    file_path: Path = typer.Argument(..., help="FLAC or TIFF file to inspect")
+    file_path: str = typer.Argument(..., help="FLAC or TIFF file to inspect (local path or HTTP URL)")
 ):
     """Display information about a FLAC or TIFF file"""
     
-    if not file_path.exists():
-        console.print(f"[red]Error: File does not exist: {file_path}[/red]")
-        raise typer.Exit(1)
+    # Check if it's a URL
+    is_url = file_path.startswith(('http://', 'https://'))
     
-    suffix = file_path.suffix.lower()
+    if not is_url:
+        # Local file path
+        file_path_obj = Path(file_path)
+        if not file_path_obj.exists():
+            console.print(f"[red]Error: File does not exist: {file_path}[/red]")
+            raise typer.Exit(1)
+        suffix = file_path_obj.suffix.lower()
+    else:
+        # URL - extract suffix from URL
+        from urllib.parse import urlparse
+        parsed_url = urlparse(file_path)
+        suffix = Path(parsed_url.path).suffix.lower()
     
     if suffix in ['.tif', '.tiff']:
         import rasterio
+        
+        if is_url:
+            console.print(f"[red]Error: URL-based TIFF inspection not supported yet[/red]")
+            raise typer.Exit(1)
+            
         with rasterio.open(file_path) as src:
             console.print(f"[cyan]TIFF Information:[/cyan]")
             console.print(f"  Dimensions: {src.width} x {src.height}")
@@ -114,85 +129,116 @@ def info(
             console.print(f"  Data type: {src.dtypes[0]}")
             console.print(f"  CRS: {src.crs}")
             console.print(f"  Bounds: {src.bounds}")
-            console.print(f"  File size: {file_path.stat().st_size / 1024 / 1024:.2f} MB")
+            console.print(f"  File size: {Path(file_path).stat().st_size / 1024 / 1024:.2f} MB")
             
     elif suffix == '.flac':
-        import pyflac
         console.print(f"[cyan]FLAC Information:[/cyan]")
         
-        try:
-            # Use the same approach as converter to get FLAC info
-            decoder = pyflac.FileDecoder(str(file_path))
-            audio_data, sample_rate = decoder.process()
-            
-            console.print(f"  Sample rate: {sample_rate} Hz")
-            console.print(f"  Channels: {audio_data.shape[1] if len(audio_data.shape) > 1 else 1}")
-            console.print(f"  Audio shape: {audio_data.shape}")
-            console.print(f"  Data type: {audio_data.dtype}")
-            console.print(f"  File size: {file_path.stat().st_size / 1024 / 1024:.2f} MB")
-        except Exception as e:
-            console.print(f"  [red]Error reading FLAC file: {e}[/red]")
-            console.print(f"  File size: {file_path.stat().st_size / 1024 / 1024:.2f} MB")
-        
-        # Try to read embedded metadata first, then fall back to sidecar
-        metadata = None
-        try:
-            from mutagen.flac import FLAC
-            flac_file = FLAC(str(file_path))
-            
-            if "GEOSPATIAL_CRS" in flac_file:
-                console.print(f"\n[green]Embedded Geospatial Metadata:[/green]")
-                width = flac_file.get('GEOSPATIAL_WIDTH', ['N/A'])[0]
-                height = flac_file.get('GEOSPATIAL_HEIGHT', ['N/A'])[0] 
-                count = flac_file.get('GEOSPATIAL_COUNT', ['N/A'])[0]
-                dtype = flac_file.get('GEOSPATIAL_DTYPE', ['N/A'])[0]
-                crs = flac_file.get('GEOSPATIAL_CRS', ['N/A'])[0]
-                data_min = flac_file.get('GEOSPATIAL_DATA_MIN', ['N/A'])[0]
-                data_max = flac_file.get('GEOSPATIAL_DATA_MAX', ['N/A'])[0]
+        if is_url:
+            # For URLs, use SpatialFLACStreamer to get info without downloading the entire file
+            try:
+                import requests
+                from .spatial_encoder import SpatialFLACStreamer
                 
-                console.print(f"  Original dimensions: {width} x {height}")
-                console.print(f"  Original bands: {count}")
-                console.print(f"  Original dtype: {dtype}")
-                console.print(f"  CRS: {crs}")
-                console.print(f"  Data range: [{data_min}, {data_max}]")
+                # Get file size from HTTP HEAD request
+                response = requests.head(file_path)
+                file_size = int(response.headers.get('content-length', 0))
+                console.print(f"  Remote file size: {file_size / 1024 / 1024:.2f} MB")
                 
-                # Check for spatial tiling
-                spatial_tiling = flac_file.get('GEOSPATIAL_SPATIAL_TILING', ['false'])[0].lower() == 'true'
-                if spatial_tiling:
-                    num_tiles = flac_file.get('GEOSPATIAL_NUM_TILES', ['N/A'])[0]
-                    tile_size = flac_file.get('GEOSPATIAL_TILE_SIZE', ['N/A'])[0]
-                    console.print(f"  Spatial tiling: {num_tiles} tiles of {tile_size}x{tile_size}")
+                # Load spatial metadata (lazy loading)
+                console.print(f"  [cyan]Loading metadata (lazy loading)...[/cyan]")
+                streamer = SpatialFLACStreamer(file_path)
+                
+                console.print(f"  Spatial tiles: {len(streamer.spatial_index.frames)}")
+                console.print(f"  Total indexed data: {streamer.spatial_index.total_bytes:,} bytes")
+                
+                # Show embedded metadata from streamer
+                if hasattr(streamer, 'spatial_index') and streamer.spatial_index:
+                    # Get metadata from the first frame or spatial index metadata
+                    console.print(f"\n[green]Spatial FLAC Metadata:[/green]")
+                    console.print(f"  Spatial format: Yes")
+                    console.print(f"  Total frames/tiles: {len(streamer.spatial_index.frames)}")
+                    console.print(f"  CRS: {streamer.spatial_index.crs}")
+                    console.print(f"  Transform: {streamer.spatial_index.transform}")
+                
+            except Exception as e:
+                console.print(f"  [red]Error reading remote FLAC file: {e}[/red]")
+                
+        else:
+            # Local file processing
+            try:
+                import pyflac
+                # Use the same approach as converter to get FLAC info
+                decoder = pyflac.FileDecoder(str(file_path))
+                audio_data, sample_rate = decoder.process()
+                
+                console.print(f"  Sample rate: {sample_rate} Hz")
+                console.print(f"  Channels: {audio_data.shape[1] if len(audio_data.shape) > 1 else 1}")
+                console.print(f"  Audio shape: {audio_data.shape}")
+                console.print(f"  Data type: {audio_data.dtype}")
+                console.print(f"  File size: {Path(file_path).stat().st_size / 1024 / 1024:.2f} MB")
+            except Exception as e:
+                console.print(f"  [red]Error reading FLAC file: {e}[/red]")
+                console.print(f"  File size: {Path(file_path).stat().st_size / 1024 / 1024:.2f} MB")
+            
+            # Try to read embedded metadata for local files only
+            metadata = None
+            try:
+                from mutagen.flac import FLAC
+                flac_file = FLAC(str(file_path))
+                
+                if "GEOSPATIAL_CRS" in flac_file:
+                    console.print(f"\n[green]Embedded Geospatial Metadata:[/green]")
+                    width = flac_file.get('GEOSPATIAL_WIDTH', ['N/A'])[0]
+                    height = flac_file.get('GEOSPATIAL_HEIGHT', ['N/A'])[0] 
+                    count = flac_file.get('GEOSPATIAL_COUNT', ['N/A'])[0]
+                    dtype = flac_file.get('GEOSPATIAL_DTYPE', ['N/A'])[0]
+                    crs = flac_file.get('GEOSPATIAL_CRS', ['N/A'])[0]
+                    data_min = flac_file.get('GEOSPATIAL_DATA_MIN', ['N/A'])[0]
+                    data_max = flac_file.get('GEOSPATIAL_DATA_MAX', ['N/A'])[0]
+                    
+                    console.print(f"  Original dimensions: {width} x {height}")
+                    console.print(f"  Original bands: {count}")
+                    console.print(f"  Original dtype: {dtype}")
+                    console.print(f"  CRS: {crs}")
+                    console.print(f"  Data range: [{data_min}, {data_max}]")
+                    
+                    # Check for spatial tiling
+                    spatial_tiling = flac_file.get('GEOSPATIAL_SPATIAL_TILING', ['false'])[0].lower() == 'true'
+                    if spatial_tiling:
+                        console.print(f"  Spatial tiling: Yes")
+                    else:
+                        console.print(f"  Spatial tiling: No")
+                        
+                    # Show bounds if available
+                    bounds_str = flac_file.get('GEOSPATIAL_BOUNDS', [None])[0]
+                    if bounds_str:
+                        bounds = json.loads(bounds_str)
+                        console.print(f"  Bounds: ({bounds[0]:.6f}, {bounds[1]:.6f}, {bounds[2]:.6f}, {bounds[3]:.6f})")
+                        
+                    metadata = True
                 else:
-                    console.print(f"  Spatial tiling: No")
+                    raise ValueError("No embedded metadata")
                     
-                # Show bounds if available
-                bounds_str = flac_file.get('GEOSPATIAL_BOUNDS', [None])[0]
-                if bounds_str:
-                    bounds = json.loads(bounds_str)
-                    console.print(f"  Bounds: ({bounds[0]:.6f}, {bounds[1]:.6f}, {bounds[2]:.6f}, {bounds[3]:.6f})")
+            except Exception:
+                # Fall back to sidecar file
+                metadata_path = Path(file_path).with_suffix('.json')
+                if metadata_path.exists():
+                    with open(metadata_path, 'r') as f:
+                        metadata_json = json.load(f)
+                        console.print(f"\n[yellow]Raster Metadata (from {metadata_path.name}):[/yellow]")
+                        console.print(f"  Original dimensions: {metadata_json['width']} x {metadata_json['height']}")
+                        console.print(f"  Original bands: {metadata_json['count']}")
+                        console.print(f"  Original dtype: {metadata_json['dtype']}")
+                        console.print(f"  CRS: {metadata_json.get('crs', 'None')}")
+                        if metadata_json.get('bounds'):
+                            b = metadata_json['bounds']
+                            console.print(f"  Bounds: ({b['left']}, {b['bottom']}, {b['right']}, {b['top']})")
+                    metadata = True
                     
-                metadata = True
-            else:
-                raise ValueError("No embedded metadata")
+            if not metadata:
+                console.print(f"\n[yellow]No embedded or sidecar metadata found[/yellow]")
                 
-        except Exception:
-            # Fall back to sidecar file
-            metadata_path = file_path.with_suffix('.json')
-            if metadata_path.exists():
-                with open(metadata_path, 'r') as f:
-                    metadata_json = json.load(f)
-                    console.print(f"\n[yellow]Raster Metadata (from {metadata_path.name}):[/yellow]")
-                    console.print(f"  Original dimensions: {metadata_json['width']} x {metadata_json['height']}")
-                    console.print(f"  Original bands: {metadata_json['count']}")
-                    console.print(f"  Original dtype: {metadata_json['dtype']}")
-                    console.print(f"  CRS: {metadata_json.get('crs', 'None')}")
-                    if metadata_json.get('bounds'):
-                        b = metadata_json['bounds']
-                        console.print(f"  Bounds: ({b['left']}, {b['bottom']}, {b['right']}, {b['top']})")
-                metadata = True
-                
-        if not metadata:
-            console.print(f"\n[yellow]No embedded or sidecar metadata found[/yellow]")
     else:
         console.print(f"[red]Error: Unsupported file format: {suffix}[/red]")
         raise typer.Exit(1)
