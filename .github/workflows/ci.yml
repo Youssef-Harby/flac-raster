@@ -62,19 +62,19 @@ jobs:
 
     - name: Test conversions
       run: |
-        # Test DEM conversion
-        flac-raster convert test_data/sample_dem.tif
-        flac-raster convert test_data/sample_dem.flac -o test_data/dem_test.tif
+        # Test DEM conversion (force overwrite since test data already exists)
+        flac-raster convert test_data/sample_dem.tif --force
+        flac-raster convert test_data/sample_dem.flac -o test_data/dem_test.tif --force
         flac-raster compare test_data/sample_dem.tif test_data/dem_test.tif
         
         # Test RGB conversion
-        flac-raster convert test_data/sample_rgb.tif
-        flac-raster convert test_data/sample_rgb.flac -o test_data/rgb_test.tif
+        flac-raster convert test_data/sample_rgb.tif --force
+        flac-raster convert test_data/sample_rgb.flac -o test_data/rgb_test.tif --force
         flac-raster compare test_data/sample_rgb.tif test_data/rgb_test.tif
         
         # Test multispectral conversion
-        flac-raster convert test_data/sample_multispectral.tif
-        flac-raster convert test_data/sample_multispectral.flac -o test_data/ms_test.tif
+        flac-raster convert test_data/sample_multispectral.tif --force
+        flac-raster convert test_data/sample_multispectral.flac -o test_data/ms_test.tif --force
         flac-raster compare test_data/sample_multispectral.tif test_data/ms_test.tif
 
     - name: Test info command
