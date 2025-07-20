@@ -15,7 +15,9 @@ jobs:
   test:
     name: Test on ${{ matrix.os }} - Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ["3.9", "3.10", "3.11", "3.12"]
@@ -99,7 +101,7 @@ jobs:
     - name: Validate package structure
       run: |
         # Test that the package can be imported
-        python -c "from src.flac_raster.converter import FlacRasterConverter; print('Package imports correctly')"
+        python -c "from src.flac_raster.converter import RasterFLACConverter; print('Package imports correctly')"
         python -c "from src.flac_raster.compare import compare_tiffs; print('Compare module imports correctly')"
         python -c "from src.flac_raster.cli import app; print('CLI module imports correctly')"
         python -c "from src.flac_raster.spatial_encoder import SpatialFLACStreamer; print('Spatial encoder imports correctly')"
