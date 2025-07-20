@@ -122,15 +122,15 @@ jobs:
         test_file = Path('test_data/dem_spatial.flac')
         if test_file.exists():
             streamer = SpatialFLACStreamer(test_file)
-            print(f'✓ Loaded spatial index with {len(streamer.spatial_index.frames)} tiles')
-            print(f'✓ Total bytes: {streamer.spatial_index.total_bytes:,}')
+            print(f'[OK] Loaded spatial index with {len(streamer.spatial_index.frames)} tiles')
+            print(f'[OK] Total bytes: {streamer.spatial_index.total_bytes:,}')
             
             # Test bbox query
             ranges = streamer.get_byte_ranges_for_bbox((34.0, 28.5, 34.5, 29.0))
-            print(f'✓ Bbox query returned {len(ranges)} byte ranges')
-            print('✓ All spatial encoding tests passed!')
+            print(f'[OK] Bbox query returned {len(ranges)} byte ranges')
+            print('[OK] All spatial encoding tests passed!')
         else:
-            print('✗ Spatial test file not found')
+            print('[ERROR] Spatial test file not found')
             sys.exit(1)
         "
 

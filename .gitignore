@@ -178,7 +178,6 @@ $RECYCLE.BIN/
 
 # Test data and outputs
 test_data/
-testing_dataset/
 *.flac
 *.wav
 
