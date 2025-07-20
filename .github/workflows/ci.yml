@@ -85,9 +85,9 @@ jobs:
     - name: Validate package structure
       run: |
         # Test that the package can be imported
-        python -c "from src.flac_raster.converter import RasterFLACConverter; print('✓ Package imports correctly')"
-        python -c "from src.flac_raster.compare import compare_tiffs; print('✓ Compare module imports correctly')"
-        python -c "from src.flac_raster.cli import app; print('✓ CLI module imports correctly')"
+        python -c "from src.flac_raster.converter import RasterFLACConverter; print('Package imports correctly')"
+        python -c "from src.flac_raster.compare import compare_tiffs; print('Compare module imports correctly')"
+        python -c "from src.flac_raster.cli import app; print('CLI module imports correctly')"
 
     - name: Run unit tests (if they exist)
       run: |
