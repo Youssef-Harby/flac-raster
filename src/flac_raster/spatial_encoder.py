@@ -488,10 +488,20 @@ class SpatialFLACStreamer:
         ranges = self.get_byte_ranges_for_bbox(bbox)
         
         data_chunks = []
-        with open(self.flac_path, 'rb') as f:
+        if self.flac_path.startswith(('http://', 'https://')):
+            # HTTP URL - use range requests
+            import requests
             for start, end in ranges:
-                f.seek(start)
-                chunk = f.read(end - start + 1)
-                data_chunks.append(chunk)
+                headers = {'Range': f'bytes={start}-{end}'}
+                response = requests.get(self.flac_path, headers=headers)
+                response.raise_for_status()
+                data_chunks.append(response.content)
+        else:
+            # Local file
+            with open(self.flac_path, 'rb') as f:
+                for start, end in ranges:
+                    f.seek(start)
+                    chunk = f.read(end - start + 1)
+                    data_chunks.append(chunk)
                 
         return b''.join(data_chunks)

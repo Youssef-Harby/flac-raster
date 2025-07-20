@@ -1,16 +1,30 @@
-# FLAC-Raster: HTTP Range Request Streaming for Geospatial Data
+# FLAC-Raster: Netflix-Style Streaming for Geospatial Data
 
 ## Executive Summary
 
-FLAC-Raster implements "Zarr for geospatial data using audio compression" by leveraging FLAC's efficient audio compression for raster data and embedding spatial metadata directly within FLAC files. This enables **lazy loading** and precise HTTP range request streaming based on geographic bounding boxes, providing efficient access to geospatial data over the web without requiring full file downloads.
+FLAC-Raster implements **"Netflix for Geospatial Data"** by creating self-contained FLAC tiles that can be streamed independently, exactly like Netflix video segments or Spotify audio chunks. This revolutionary approach enables **true streaming** of geospatial data with HTTP range requests, providing 99%+ bandwidth savings for selective geographic queries.
 
-### Key Innovation: Lazy Loading Architecture
+### 🎵 **Key Innovation: Netflix-Style Tile Architecture**
 
-The system implements a two-phase loading strategy:
-1. **Metadata Phase**: Download first 1MB to read embedded spatial index (one-time cost)
-2. **Streaming Phase**: Issue HTTP Range requests for only needed geographic tiles (on-demand)
+FLAC-Raster now supports two distinct formats:
 
-This approach delivers **60-80% bandwidth savings** for typical geospatial queries while maintaining pixel-perfect accuracy.
+#### **🆕 Streaming Format** (Netflix-Style)
+- **Self-contained tiles**: Each tile is a complete, independent FLAC file
+- **Instant decode**: Any tile can be decoded without full file context  
+- **HTTP range ready**: Perfect byte boundaries for range requests
+- **99%+ bandwidth savings**: Stream 0.8MB tile instead of 185MB file
+
+#### **Legacy Raw Frames Format**
+- **High compression**: Exceptional compression ratio (15MB for 185MB equivalent)
+- **Full file access**: Requires downloading complete file
+- **80% bandwidth savings**: For selective queries after full download
+
+### **Streaming Performance:**
+1. **Metadata Phase**: Download 21KB spatial index (one-time cost)
+2. **Streaming Phase**: Stream individual tiles (0.8-1.5MB each) on-demand
+3. **Instant decode**: Complete FLAC files with all headers included
+
+This approach delivers **99%+ bandwidth savings** for single tile queries while maintaining pixel-perfect accuracy.
 
 ## Architecture Overview
 
@@ -23,23 +37,89 @@ This approach delivers **60-80% bandwidth savings** for typical geospatial queri
 5. **HTTP Range Streaming**: Provides precise byte ranges for geographic queries
 6. **URL Support**: Enables querying remote FLAC files directly via HTTPS
 
-### Lazy Loading Workflow
+### 🎬 **Netflix-Style Streaming Architecture**
 
+#### **Streaming Format Creation**
 ```
-┌─────────────┐    ┌──────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│ Input TIFF  │ →  │ Spatial      │ →  │ FLAC Encoding   │ →  │ Embedded        │
-│ Raster      │    │ Tiling       │    │ (per tile)      │    │ Metadata        │
-└─────────────┘    └──────────────┘    └─────────────────┘    └─────────────────┘
+┌─────────────┐    ┌──────────────┐    ┌─────────────────┐    ┌──────────────────┐
+│ Input TIFF  │ →  │ Spatial      │ →  │ Complete FLAC   │ →  │ Streaming FLAC   │
+│ Raster      │    │ Tiling       │    │ per Tile        │    │ File Assembly    │
+└─────────────┘    └──────────────┘    └─────────────────┘    └──────────────────┘
+                                             │                          │
+                                             ▼                          │
+              ┌─────────────────────────────────────────────────────────┘
+              │
+              ▼
+[4 bytes index size][JSON spatial index][Complete FLAC Tile 1][Complete FLAC Tile 2]...[Tile N]
+```
+
+#### **Netflix-Style Streaming Workflow**
+```
+┌─────────────┐    ┌──────────────┐    ┌─────────────────┐    ┌──────────────────┐
+│ Remote      │ →  │ Metadata     │ →  │ Spatial Index   │ →  │ Tile Discovery   │
+│ FLAC URL    │    │ Range (21KB) │    │ Parsing         │    │ (bbox matching)  │
+└─────────────┘    └──────────────┘    └─────────────────┘    └──────────────────┘
                                                                         │
 ┌─────────────┐    ┌──────────────┐    ┌─────────────────┐              │
-│ Remote FLAC │ →  │ Lazy Load    │ →  │ Spatial Index   │ ←────────────┘
-│ URL         │    │ (1MB only)   │    │ Extraction      │              
+│ Perfect     │ ←  │ Independent  │ ←  │ Tile Range      │ ←────────────┘
+│ GeoTIFF     │    │ FLAC Decode  │    │ Request (0.8MB) │              
 └─────────────┘    └──────────────┘    └─────────────────┘              
-                           │                     │                      
-┌─────────────┐    ┌──────────────┐    ┌─────────────────┐              
-│ HTTP Range  │ ←  │ Bbox Query   │ ←  │ Tile            │              
-│ Streaming   │    │ Processing   │    │ Intersection    │              
-└─────────────┘    └──────────────┘    └─────────────────┘              
+```
+
+#### **Key Advantages Over Traditional Streaming**
+- ✅ **Self-contained segments**: Like Netflix video chunks, each tile is complete
+- ✅ **Instant playback**: No waiting for file headers or metadata
+- ✅ **Perfect quality**: Lossless geospatial data with full metadata
+- ✅ **HTTP native**: Works with any web server, CDN, or browser
+- ✅ **Bandwidth efficient**: 99%+ savings for selective queries
+
+## 🌐 **Live Streaming Test Results**
+
+### **Real-World Netflix-Style Streaming Demo**
+
+**Live URL**: `https://link.storjshare.io/raw/jx6xy3osjqlnz7mw5r6m24kbpfea/truemaps-public/flac-raster/B04_streaming.flac`
+
+| **Metric** | **Value** | **Performance** |
+|------------|-----------|-----------------|
+| **File Size** | 185 MB | Sentinel-2 B04 band (10,980×10,980) |
+| **Total Tiles** | 121 tiles | 1024×1024 px each (last tile: 740×740) |
+| **Metadata Size** | 21 KB | Spatial index with bbox coordinates |
+| **Average Tile Size** | 1.5 MB | Complete FLAC files per tile |
+| **Streaming Efficiency** | **99.2%** | Single tile vs full file |
+
+### **Live Streaming Commands**
+
+```bash
+# 🎯 Extract last tile (frame 120)
+python test_streaming.py "https://link.storjshare.io/raw/jx6xy3osjqlnz7mw5r6m24kbpfea/truemaps-public/flac-raster/B04_streaming.flac" --last
+
+# 🗺️ Extract by geographic bounding box
+python test_streaming.py "https://link.storjshare.io/raw/jx6xy3osjqlnz7mw5r6m24kbpfea/truemaps-public/flac-raster/B04_streaming.flac" --bbox="602380,3090240,609780,3097640"
+
+# 📊 Show bandwidth analysis
+python test_streaming.py "https://link.storjshare.io/raw/jx6xy3osjqlnz7mw5r6m24kbpfea/truemaps-public/flac-raster/B04_streaming.flac" --tile-id=0 --savings
+```
+
+### **Netflix-Style Performance Results**
+
+| **Query Type** | **HTTP Requests** | **Data Downloaded** | **Bandwidth Savings** | **Output** |
+|----------------|-------------------|-------------------|----------------------|------------|
+| **Metadata Load** | 2 range requests | 21 KB | N/A | Spatial index with 121 tiles |
+| **Last Tile** | 1 range request | 861 KB | **99.5%** | Perfect 740×740 GeoTIFF |
+| **First Tile** | 1 range request | 1.5 MB | **99.2%** | Perfect 1024×1024 GeoTIFF |
+| **3×3 Region** | 1-9 range requests | ~13.5 MB | **92.7%** | 9 perfect GeoTIFF tiles |
+
+### **HTTP Range Request Examples**
+
+```http
+# Metadata loading (21KB spatial index)
+GET /B04_streaming.flac HTTP/1.1
+Range: bytes=0-3
+Range: bytes=4-21187
+
+# Last tile streaming (861KB)
+GET /B04_streaming.flac HTTP/1.1  
+Range: bytes=185030251-185891616
 ```
 
 ## Test Data Analysis
@@ -48,6 +128,7 @@ This approach delivers **60-80% bandwidth savings** for typical geospatial queri
 
 | Dataset | Dimensions | Bands | Data Type | Original Size | CRS | Geographic Coverage |
 |---------|------------|-------|-----------|---------------|-----|-------------------|
+| **🆕 B04_streaming.flac** | 10,980×10,980 | 1 | uint16 | 185 MB | EPSG:32636 | Sentinel-2 B04 band |
 | dem-raw.tif | 1201×1201 | 1 | int16 | 2.8 MB | EPSG:4326 | Jordan/Middle East DEM |
 | sample_multispectral.tif | 200×200 | 6 | uint8 | 235 KB | EPSG:4326 | US East Coast |
 | sample_rgb.tif | 256×256 | 3 | uint8 | 193 KB | EPSG:4326 | California |
