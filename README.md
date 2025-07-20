@@ -12,12 +12,12 @@ An experimental CLI tool that converts TIFF raster data files into FLAC audio fo
 FLAC-Raster now supports **lazy loading** with HTTP range request streaming - like "Zarr for geospatial data" but using audio compression! 
 
 - **🏃‍♂️ Lazy loading**: Load only metadata first (1MB), stream tiles on-demand
-- **🌐 Web-optimized**: Upload FLAC files to any HTTP server, query by bbox with range requests
-- **📍 Spatial indexing**: Each tile has bbox metadata for efficient spatial queries  
-- **⚡ Streaming**: Download only the data you need, not entire files (80%+ bandwidth savings)
-- **🎯 Precise**: Query specific geographic areas with pixel-perfect accuracy
-- **📡 HTTP compatible**: Works with standard web servers, CDNs, and browsers
-- **🔗 URL support**: Query remote FLAC files directly via HTTPS URLs
+- **Web-optimized**: Upload FLAC files to any HTTP server, query by bbox with range requests
+- **Spatial indexing**: Each tile has bbox metadata for efficient spatial queries  
+- **Streaming**: Download only the data you need, not entire files (80%+ bandwidth savings)
+- **Precise**: Query specific geographic areas with pixel-perfect accuracy
+- **HTTP compatible**: Works with standard web servers, CDNs, and browsers
+- **URL support**: Query remote FLAC files directly via HTTPS URLs
 
 ## Features
 
@@ -224,24 +224,24 @@ GEOSPATIAL_SPATIAL_INDEX=<base64(gzip(spatial_index_json))>
 ...
 ```
 
-## 🌐 Lazy Loading & HTTP Range Streaming for Web GIS
+## Lazy Loading & HTTP Range Streaming for Web GIS
 
 ### Concept: "Zarr for Geospatial Data using Audio Compression"
 
 The lazy loading feature transforms FLAC-Raster into a **web-native geospatial format** that enables efficient HTTP range request streaming:
 
 ```
-🌐 FLAC URL: https://cdn.example.com/elevation.flac
+FLAC URL: https://cdn.example.com/elevation.flac
         ↓
 🏃‍♂️ Lazy Load: Download first 1MB for metadata only
         ↓
-📊 Query Spatial Index: Find intersecting tiles for bbox
+Query Spatial Index: Find intersecting tiles for bbox
         ↓
-📡 HTTP Range Request: bytes=48152-73513,87850-113211
+HTTP Range Request: bytes=48152-73513,87850-113211
         ↓  
 ⬇️ Smart Download: Only 76KB instead of 189KB (60% savings!)
         ↓
-🎵 Decode FLAC: Get pixels for visible area only
+Decode FLAC: Get pixels for visible area only
 ```
 
 ### Lazy Loading Workflow
@@ -363,10 +363,10 @@ flac-raster/
 ## CI/CD & Publishing
 
 This project uses GitHub Actions for:
-- ✅ **Continuous Integration**: Tests on Python 3.9-3.12 across Windows, macOS, and Linux
-- ✅ **Automated Building**: Package building and validation
-- ✅ **PyPI Publishing**: Automatic publishing on release creation
-- ✅ **Quality Assurance**: Integration testing via CLI commands
+- **Continuous Integration**: Tests on Python 3.9-3.12 across Windows, macOS, and Linux
+- **Automated Building**: Package building and validation
+- **PyPI Publishing**: Automatic publishing on release creation
+- **Quality Assurance**: Integration testing via CLI commands
 
 ### Publishing to PyPI
 See [PUBLISHING.md](PUBLISHING.md) for detailed instructions on publishing releases.

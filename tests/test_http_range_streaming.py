@@ -283,18 +283,18 @@ if __name__ == "__main__":
         # Test local file loading
         try:
             streamer = SpatialFLACStreamer(test_file)
-            print(f"✓ Loaded spatial index with {len(streamer.spatial_index.frames)} tiles")
+            print(f"[OK] Loaded spatial index with {len(streamer.spatial_index.frames)} tiles")
             
             # Test bbox query
             if streamer.spatial_index.frames:
                 first_frame = streamer.spatial_index.frames[0]
                 ranges = streamer.get_byte_ranges_for_bbox(first_frame.bbox)
-                print(f"✓ Bbox query returned {len(ranges)} byte ranges")
+                print(f"[OK] Bbox query returned {len(ranges)} byte ranges")
             
-            print("✓ All basic tests passed!")
+            print("[OK] All basic tests passed!")
             
         except Exception as e:
-            print(f"✗ Test failed: {e}")
+            print(f"[ERROR] Test failed: {e}")
             sys.exit(1)
     else:
         print("Test data not available, skipping tests")

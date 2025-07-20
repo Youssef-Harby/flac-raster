@@ -34,13 +34,13 @@ def create_spatial_flac_demo():
         return None
         
     # Create spatial FLAC with 256x256 tiles
-    print("🌍 Creating spatial FLAC with 256x256 tiles...")
+    print("[INFO] Creating spatial FLAC with 256x256 tiles...")
     encoder = SpatialFLACEncoder(tile_size=256)
     spatial_index = encoder.encode_spatial_flac(tiff_path, flac_path, compression_level=5)
     
-    print(f"✅ Created {len(spatial_index.frames)} spatial tiles")
-    print(f"📁 FLAC file: {flac_path}")
-    print(f"📊 Spatial index: {flac_path.with_suffix('.spatial.json')}")
+    print(f"[SUCCESS] Created {len(spatial_index.frames)} spatial tiles")
+    print(f"[FILE] FLAC file: {flac_path}")
+    print(f"[INDEX] Spatial index: {flac_path.with_suffix('.spatial.json')}")
     
     return flac_path
 
@@ -48,7 +48,7 @@ def create_spatial_flac_demo():
 def demonstrate_bbox_queries(flac_path: Path):
     """Demonstrate different bbox queries"""
     
-    print(f"\n🔍 Querying spatial FLAC: {flac_path}")
+    print(f"\n[QUERY] Querying spatial FLAC: {flac_path}")
     
     # Create streamer
     streamer = SpatialFLACStreamer(flac_path)
@@ -62,28 +62,28 @@ def demonstrate_bbox_queries(flac_path: Path):
     ]
     
     for i, bbox in enumerate(test_bboxes, 1):
-        print(f"\n📍 Query {i}: BBOX {bbox}")
+        print(f"\n[QUERY] Query {i}: BBOX {bbox}")
         
         # Get byte ranges
         ranges = streamer.get_byte_ranges_for_bbox(bbox)
         total_bytes = sum(end - start + 1 for start, end in ranges)
         
-        print(f"   💾 {len(ranges)} byte ranges, {total_bytes:,} bytes total")
+        print(f"   [DATA] {len(ranges)} byte ranges, {total_bytes:,} bytes total")
         
         # Show HTTP headers that would be used
         if ranges:
             http_headers = [f"bytes={start}-{end}" for start, end in ranges]
-            print(f"   📡 HTTP Range Headers: {http_headers}")
+            print(f"   [HTTP] HTTP Range Headers: {http_headers}")
             
         # Extract data (simulate streaming)
         data = streamer.stream_bbox_data(bbox)
-        print(f"   ⬇️  Extracted {len(data):,} bytes of FLAC data")
+        print(f"   [EXTRACT] Extracted {len(data):,} bytes of FLAC data")
 
 
 def simulate_http_range_requests(flac_path: Path):
     """Simulate HTTP range requests for a web server scenario"""
     
-    print(f"\n🌐 Simulating HTTP Range Request Server...")
+    print(f"\n[SERVER] Simulating HTTP Range Request Server...")
     
     # This would be your web server endpoint
     def serve_spatial_flac_range(bbox_str: str, flac_file: Path):
@@ -117,29 +117,29 @@ def simulate_http_range_requests(flac_path: Path):
     ]
     
     for bbox_str in bbox_queries:
-        print(f"\n📞 Client request: GET /spatial.flac?bbox={bbox_str}")
+        print(f"\n[CLIENT] Client request: GET /spatial.flac?bbox={bbox_str}")
         
         # Server processes request
         response = serve_spatial_flac_range(bbox_str, flac_path)
         
-        print(f"   📤 Content-Type: {response['content_type']}")
-        print(f"   📏 Content-Length: {response['content_length']:,} bytes")
-        print(f"   🔄 Accept-Ranges: {response['accept_ranges']}")
-        print(f"   📍 HTTP Ranges: {response['http_ranges']}")
-        print(f"   💾 Data size: {len(response['data']):,} bytes")
+        print(f"   [RESPONSE] Content-Type: {response['content_type']}")
+        print(f"   [SIZE] Content-Length: {response['content_length']:,} bytes")
+        print(f"   [RANGE] Accept-Ranges: {response['accept_ranges']}")
+        print(f"   [HEADERS] HTTP Ranges: {response['http_ranges']}")
+        print(f"   [DATA] Data size: {len(response['data']):,} bytes")
         
         # Client could now use these ranges for partial downloads
-        print(f"   ✅ Client receives {len(response['data']):,} bytes of spatial FLAC data")
+        print(f"   [SUCCESS] Client receives {len(response['data']):,} bytes of spatial FLAC data")
 
 
 def demonstrate_web_use_case():
     """Show a complete web mapping use case"""
     
-    print(f"\n🗺️  Web Mapping Use Case Example")
+    print(f"\n[MAP] Web Mapping Use Case Example")
     print("="*50)
     
     print("""
-🌍 Scenario: Interactive Web Map with On-Demand DEM Data
+Scenario: Interactive Web Map with On-Demand DEM Data
 
 1. Server Setup:
    - Large DEM file converted to spatial FLAC with 256x256 tiles
@@ -162,19 +162,19 @@ def demonstrate_web_use_case():
    [FLAC data for visible area only]
 
 4. Benefits:
-   ✅ Only download data for visible area (not entire file)
-   ✅ Works with standard HTTP servers (no special GIS server needed)
-   ✅ FLAC compression reduces bandwidth usage
-   ✅ Metadata preserved for accurate geographic positioning
-   ✅ Can be cached by CDNs and browsers
-   ✅ Progressive loading as user pans/zooms
+   [+] Only download data for visible area (not entire file)
+   [+] Works with standard HTTP servers (no special GIS server needed)
+   [+] FLAC compression reduces bandwidth usage
+   [+] Metadata preserved for accurate geographic positioning
+   [+] Can be cached by CDNs and browsers
+   [+] Progressive loading as user pans/zooms
    
-This is like a "Zarr for geospatial data" but using audio compression! 🎵📊
+This is like a "Zarr for geospatial data" but using audio compression!
     """)
 
 
 if __name__ == "__main__":
-    print("🎵 FLAC-Raster Spatial Streaming Demo")
+    print("[DEMO] FLAC-Raster Spatial Streaming Demo")
     print("="*40)
     
     # Create spatial FLAC
@@ -190,10 +190,10 @@ if __name__ == "__main__":
         # Show web use case
         demonstrate_web_use_case()
         
-        print(f"\n🎉 Demo complete! Check out:")
-        print(f"   📁 {flac_path}")
-        print(f"   📊 {flac_path.with_suffix('.spatial.json')}")
-        print(f"   💾 extracted_data.flac")
+        print(f"\n[COMPLETE] Demo complete! Check out:")
+        print(f"   [FILE] {flac_path}")
+        print(f"   [INDEX] {flac_path.with_suffix('.spatial.json')}")
+        print(f"   [OUTPUT] extracted_data.flac")
         
     else:
-        print("❌ Demo failed - check sample data availability")
+        print("[ERROR] Demo failed - check sample data availability")

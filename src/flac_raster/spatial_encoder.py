@@ -349,12 +349,12 @@ class SpatialFLACEncoder:
             # Save metadata to FLAC file
             flac_file.save()
             
-            self.logger.info(f"✅ Embedded complete metadata in FLAC file (no sidecar needed)")
-            console.print(f"[green]✅ All metadata embedded in FLAC file - no sidecar files needed![/green]")
+            self.logger.info(f"[SUCCESS] Embedded complete metadata in FLAC file (no sidecar needed)")
+            console.print(f"[green][SUCCESS] All metadata embedded in FLAC file - no sidecar files needed![/green]")
             
         except ImportError:
             self.logger.warning("mutagen not available - falling back to JSON sidecar")
-            console.print(f"[yellow]⚠️  Install mutagen for embedded metadata: pip install mutagen[/yellow]")
+            console.print(f"[yellow][WARNING] Install mutagen for embedded metadata: pip install mutagen[/yellow]")
             
             # Fallback to JSON sidecar
             index_path = flac_path.with_suffix('.spatial.json')
@@ -364,7 +364,7 @@ class SpatialFLACEncoder:
             
         except Exception as e:
             self.logger.error(f"Failed to embed metadata: {e}")
-            console.print(f"[red]❌ Failed to embed metadata: {e}[/red]")
+            console.print(f"[red][ERROR] Failed to embed metadata: {e}[/red]")
             
             # Fallback to JSON sidecar  
             index_path = flac_path.with_suffix('.spatial.json')
